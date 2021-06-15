@@ -799,7 +799,7 @@ QuicStreamWriteOneFrame(
         Stream->SendFlags &= ~QUIC_STREAM_SEND_FLAG_FIN;
         PacketMetadata->Frames[PacketMetadata->FrameCount].Flags |= QUIC_SENT_FRAME_FLAG_STREAM_FIN;
     }
-    QuicStreamAddRef(Stream, QUIC_STREAM_REF_SEND_PACKET);
+    QuicStreamSentMetadataIncrement(Stream);
     PacketMetadata->FrameCount++;
 }
 
@@ -1304,7 +1304,7 @@ QuicStreamOnAck(
     CXPLAT_DBG_ASSERT(FollowingOffset <= Stream->QueuedSendOffset);
 
     QuicTraceLogStreamVerbose(
-        AckRange,
+        AckRangeMsg,
         Stream,
         "Received ack for %d bytes, offset=%llu, FF=0x%hx",
         (int32_t)Length,

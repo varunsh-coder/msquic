@@ -30,7 +30,7 @@ Abstract:
     (ARRAYSIZE(QuicSupportedVersionList) * sizeof(uint32_t)) \
 )
 CXPLAT_STATIC_ASSERT(
-    QUIC_DEFAULT_PATH_MTU - 48 >= MAX_VER_NEG_PACKET_LENGTH,
+    QUIC_DPLPMUTD_MIN_MTU - 48 >= MAX_VER_NEG_PACKET_LENGTH,
     "Too many supported version numbers! Requires too big of buffer for response!");
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -125,14 +125,42 @@ QuicBindingInitialize(
     }
 #endif
 
-    Status =
-        CxPlatSocketCreateUdp(
-            MsQuicLib.Datapath,
-            LocalAddress,
-            RemoteAddress,
-            Binding,
-            0,
-            &Binding->Socket);
+#if QUIC_TEST_DATAPATH_HOOKS_ENABLED
+    QUIC_TEST_DATAPATH_HOOKS* Hooks = MsQuicLib.TestDatapathHooks;
+    if (Hooks != NULL) {
+        QUIC_ADDR RemoteAddressCopy;
+        if (RemoteAddress != NULL) {
+            RemoteAddressCopy = *RemoteAddress;
+        }
+        QUIC_ADDR LocalAddressCopy;
+        if (LocalAddress != NULL) {
+            LocalAddressCopy = *LocalAddress;
+        }
+        Hooks->Create(
+            RemoteAddress != NULL ? &RemoteAddressCopy : NULL,
+            LocalAddress != NULL ? &LocalAddressCopy : NULL);
+
+        Status =
+            CxPlatSocketCreateUdp(
+                MsQuicLib.Datapath,
+                LocalAddress != NULL ? &LocalAddressCopy : NULL,
+                RemoteAddress != NULL ? &RemoteAddressCopy : NULL,
+                Binding,
+                0,
+                &Binding->Socket);
+    } else {
+#endif
+        Status =
+            CxPlatSocketCreateUdp(
+                MsQuicLib.Datapath,
+                LocalAddress,
+                RemoteAddress,
+                Binding,
+                0,
+                &Binding->Socket);
+#if QUIC_TEST_DATAPATH_HOOKS_ENABLED
+    }
+#endif
 
 #ifdef QUIC_COMPARTMENT_ID
     if (RevertCompartmentId) {
@@ -151,15 +179,15 @@ QuicBindingInitialize(
     }
 
     QUIC_ADDR DatapathLocalAddr, DatapathRemoteAddr;
-    CxPlatSocketGetLocalAddress(Binding->Socket, &DatapathLocalAddr);
-    CxPlatSocketGetRemoteAddress(Binding->Socket, &DatapathRemoteAddr);
+    QuicBindingGetLocalAddress(Binding, &DatapathLocalAddr);
+    QuicBindingGetRemoteAddress(Binding, &DatapathRemoteAddr);
     QuicTraceEvent(
         BindingCreated,
         "[bind][%p] Created, Udp=%p LocalAddr=%!ADDR! RemoteAddr=%!ADDR!",
         Binding,
         Binding->Socket,
-        CLOG_BYTEARRAY(sizeof(DatapathLocalAddr), &DatapathLocalAddr),
-        CLOG_BYTEARRAY(sizeof(DatapathRemoteAddr), &DatapathRemoteAddr));
+        CASTED_CLOG_BYTEARRAY(sizeof(DatapathLocalAddr), &DatapathLocalAddr),
+        CASTED_CLOG_BYTEARRAY(sizeof(DatapathRemoteAddr), &DatapathRemoteAddr));
 
     *NewBinding = Binding;
     Status = QUIC_STATUS_SUCCESS;
@@ -248,15 +276,15 @@ QuicBindingTraceRundown(
     // TODO - Trace datapath binding
 
     QUIC_ADDR DatapathLocalAddr, DatapathRemoteAddr;
-    CxPlatSocketGetLocalAddress(Binding->Socket, &DatapathLocalAddr);
-    CxPlatSocketGetRemoteAddress(Binding->Socket, &DatapathRemoteAddr);
+    QuicBindingGetLocalAddress(Binding, &DatapathLocalAddr);
+    QuicBindingGetRemoteAddress(Binding, &DatapathRemoteAddr);
     QuicTraceEvent(
         BindingRundown,
         "[bind][%p] Rundown, Udp=%p LocalAddr=%!ADDR! RemoteAddr=%!ADDR!",
         Binding,
         Binding->Socket,
-        CLOG_BYTEARRAY(sizeof(DatapathLocalAddr), &DatapathLocalAddr),
-        CLOG_BYTEARRAY(sizeof(DatapathRemoteAddr), &DatapathRemoteAddr));
+        CASTED_CLOG_BYTEARRAY(sizeof(DatapathLocalAddr), &DatapathLocalAddr),
+        CASTED_CLOG_BYTEARRAY(sizeof(DatapathRemoteAddr), &DatapathRemoteAddr));
 
     CxPlatDispatchRwLockAcquireShared(&Binding->RwLock);
 
@@ -268,6 +296,38 @@ QuicBindingTraceRundown(
     }
 
     CxPlatDispatchRwLockReleaseShared(&Binding->RwLock);
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+void
+QuicBindingGetLocalAddress(
+    _In_ QUIC_BINDING* Binding,
+    _Out_ QUIC_ADDR* Address
+    )
+{
+    CxPlatSocketGetLocalAddress(Binding->Socket, Address);
+#if QUIC_TEST_DATAPATH_HOOKS_ENABLED
+    QUIC_TEST_DATAPATH_HOOKS* Hooks = MsQuicLib.TestDatapathHooks;
+    if (Hooks != NULL) {
+        Hooks->GetLocalAddress(Address);
+    }
+#endif
+}
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+void
+QuicBindingGetRemoteAddress(
+    _In_ QUIC_BINDING* Binding,
+    _Out_ QUIC_ADDR* Address
+    )
+{
+    CxPlatSocketGetRemoteAddress(Binding->Socket, Address);
+#if QUIC_TEST_DATAPATH_HOOKS_ENABLED
+    QUIC_TEST_DATAPATH_HOOKS* Hooks = MsQuicLib.TestDatapathHooks;
+    if (Hooks != NULL) {
+        Hooks->GetRemoteAddress(Address);
+    }
+#endif
 }
 
 //
@@ -382,15 +442,18 @@ _Success_(return != NULL)
 QUIC_LISTENER*
 QuicBindingGetListener(
     _In_ QUIC_BINDING* Binding,
+    _In_opt_ QUIC_CONNECTION* Connection,
     _Inout_ QUIC_NEW_CONNECTION_INFO* Info
     )
 {
+    UNREFERENCED_PARAMETER(Connection);
     QUIC_LISTENER* Listener = NULL;
 
     const QUIC_ADDR* Addr = Info->LocalAddress;
     const QUIC_ADDRESS_FAMILY Family = QuicAddrGetFamily(Addr);
 
     BOOLEAN FailedAlpnMatch = FALSE;
+    BOOLEAN FailedAddrMatch = TRUE;
 
     CxPlatDispatchRwLockAcquireShared(&Binding->RwLock);
 
@@ -408,9 +471,11 @@ QuicBindingGetListener(
         if (ExistingFamily != QUIC_ADDRESS_FAMILY_UNSPEC) {
             if (Family != ExistingFamily ||
                 (!ExistingWildCard && !QuicAddrCompareIp(Addr, ExistingAddr))) {
+                FailedAddrMatch = TRUE;
                 continue; // No IP match.
             }
         }
+        FailedAddrMatch = FALSE;
 
         if (QuicListenerMatchesAlpn(ExistingListener, Info)) {
             if (CxPlatRundownAcquire(&ExistingListener->Rundown)) {
@@ -426,7 +491,18 @@ Done:
 
     CxPlatDispatchRwLockReleaseShared(&Binding->RwLock);
 
-    if (FailedAlpnMatch) {
+    if (FailedAddrMatch) {
+        QuicTraceEvent(
+            ConnNoListenerIp,
+            "[conn][%p] No Listener for IP address: %!ADDR!",
+            Connection,
+            CASTED_CLOG_BYTEARRAY(sizeof(*Addr), Addr));
+    } else if (FailedAlpnMatch) {
+        QuicTraceEvent(
+            ConnNoListenerAlpn,
+            "[conn][%p] No listener matching ALPN: %!ALPN!",
+            Connection,
+            CASTED_CLOG_BYTEARRAY(Info->ClientAlpnListLength, Info->ClientAlpnList));
         QuicPerfCounterIncrement(QUIC_PERF_COUNTER_CONN_NO_ALPN);
     }
 
@@ -457,7 +533,7 @@ QuicBindingAcceptConnection(
     // Find a listener that matches the incoming connection request, by IP, port
     // and ALPN.
     //
-    QUIC_LISTENER* Listener = QuicBindingGetListener(Binding, Info);
+    QUIC_LISTENER* Listener = QuicBindingGetListener(Binding, Connection, Info);
     if (Listener == NULL) {
         QuicTraceEvent(
             ConnError,
@@ -983,7 +1059,10 @@ QuicBindingProcessStatelessOperation(
                 (uint8_t*)&Token,
                 (uint16_t)SendDatagram->Length,
                 SendDatagram->Buffer);
-        CXPLAT_DBG_ASSERT(SendDatagram->Length != 0);
+        if (SendDatagram->Length == 0) {
+            CXPLAT_DBG_ASSERT(CxPlatIsRandomMemoryFailureEnabled());
+            goto Exit;
+        }
 
         QuicTraceLogVerbose(
             PacketTxRetry,

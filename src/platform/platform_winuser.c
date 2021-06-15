@@ -24,6 +24,7 @@ CX_PLATFORM CxPlatform = { NULL };
 CXPLAT_PROCESSOR_INFO* CxPlatProcessorInfo;
 uint64_t* CxPlatNumaMasks;
 uint32_t* CxPlatProcessorGroupOffsets;
+QUIC_TRACE_RUNDOWN_CALLBACK* QuicTraceRundownCallback;
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
 void
@@ -37,6 +38,10 @@ CxPlatSystemLoad(
 
     (void)QueryPerformanceFrequency((LARGE_INTEGER*)&CxPlatPerfFreq);
     CxPlatform.Heap = NULL;
+#ifdef DEBUG
+    CxPlatform.AllocFailDenominator = 0;
+    CxPlatform.AllocCounter = 0;
+#endif
 
     QuicTraceLogInfo(
         WindowsUserLoaded,
@@ -304,7 +309,7 @@ CxPlatInitialize(
         goto Error;
     }
 
-    Status = CxPlatTlsLibraryInitialize();
+    Status = CxPlatCryptInitialize();
     if (QUIC_FAILED(Status)) {
         goto Error;
     }
@@ -334,7 +339,7 @@ CxPlatUninitialize(
     void
     )
 {
-    CxPlatTlsLibraryUninitialize();
+    CxPlatCryptUninitialize();
     CXPLAT_DBG_ASSERT(CxPlatform.Heap);
     CXPLAT_FREE(CxPlatNumaMasks, QUIC_POOL_PLATFORM_PROC);
     CxPlatNumaMasks = NULL;
@@ -424,11 +429,13 @@ CxPlatAlloc(
     )
 {
     CXPLAT_DBG_ASSERT(CxPlatform.Heap);
-#ifdef QUIC_RANDOM_ALLOC_FAIL
-    uint8_t Rand; CxPlatRandom(sizeof(Rand), &Rand);
-    if ((Rand % 100) == 1) return NULL;
-#else
 #ifdef DEBUG
+    uint32_t Rand;
+    if ((CxPlatform.AllocFailDenominator > 0 && (CxPlatRandom(sizeof(Rand), &Rand), Rand % CxPlatform.AllocFailDenominator) == 1) ||
+        (CxPlatform.AllocFailDenominator < 0 && InterlockedIncrement(&CxPlatform.AllocCounter) % CxPlatform.AllocFailDenominator == 0)) {
+        return NULL;
+    }
+
     void* Alloc = HeapAlloc(CxPlatform.Heap, 0, ByteCount + AllocOffset);
     if (Alloc == NULL) {
         return NULL;
@@ -439,7 +446,6 @@ CxPlatAlloc(
     UNREFERENCED_PARAMETER(Tag);
     return HeapAlloc(CxPlatform.Heap, 0, ByteCount);
 #endif
-#endif // QUIC_RANDOM_ALLOC_FAIL
 }
 
 void
@@ -450,8 +456,12 @@ CxPlatFree(
 {
 #ifdef DEBUG
     void* ActualAlloc = (void*)((uint8_t*)Mem - AllocOffset);
-    uint32_t TagToCheck = *((uint32_t*)ActualAlloc);
-    CXPLAT_DBG_ASSERT(TagToCheck == Tag);
+    if (Mem != NULL) {
+        uint32_t TagToCheck = *((uint32_t*)ActualAlloc);
+        CXPLAT_DBG_ASSERT(TagToCheck == Tag);
+    } else {
+        ActualAlloc = NULL;
+    }
     (void)HeapFree(CxPlatform.Heap, 0, ActualAlloc);
 #else
     UNREFERENCED_PARAMETER(Tag);
@@ -584,6 +594,23 @@ Error:
     return FALSE;
 }
 
+#ifdef DEBUG
+void
+CxPlatSetAllocFailDenominator(
+    _In_ int32_t Value
+    )
+{
+    CxPlatform.AllocFailDenominator = Value;
+    CxPlatform.AllocCounter = 0;
+}
+int32_t
+CxPlatGetAllocFailDenominator(
+    )
+{
+    return CxPlatform.AllocFailDenominator;
+}
+#endif
+
 #ifdef QUIC_UWP_BUILD
 DWORD
 CxPlatProcActiveCount(
@@ -651,11 +678,15 @@ QuicEtwCallback(
     UNREFERENCED_PARAMETER(MatchAllKeyword);
     UNREFERENCED_PARAMETER(FilterData);
 
+    if (!QuicTraceRundownCallback) {
+        return;
+    }
+
     switch(ControlCode) {
     case EVENT_CONTROL_CODE_ENABLE_PROVIDER:
     case EVENT_CONTROL_CODE_CAPTURE_STATE:
         if (CallbackContext == &MICROSOFT_MSQUIC_PROVIDER_Context) {
-            QuicTraceRundown();
+            QuicTraceRundownCallback();
         }
         break;
     case EVENT_CONTROL_CODE_DISABLE_PROVIDER:

@@ -59,6 +59,7 @@ typedef struct _SYSTEM_BASIC_INFORMATION {
 uint64_t CxPlatPerfFreq;
 uint64_t CxPlatTotalMemory;
 CX_PLATFORM CxPlatform = { NULL, NULL };
+QUIC_TRACE_RUNDOWN_CALLBACK* QuicTraceRundownCallback;
 
 INITCODE
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -77,6 +78,11 @@ CxPlatSystemLoad(
     CxPlatform.DriverObject = DriverObject;
     (VOID)KeQueryPerformanceCounter((LARGE_INTEGER*)&CxPlatPerfFreq);
     CxPlatform.RngAlgorithm = NULL;
+
+#ifdef DEBUG
+    CxPlatform.AllocFailDenominator = 0;
+    CxPlatform.AllocCounter = 0;
+#endif
 
     QuicTraceLogInfo(
         WindowsKernelLoaded,
@@ -140,13 +146,13 @@ CxPlatInitialize(
         goto Error;
     }
 
-    Status = CxPlatTlsLibraryInitialize();
+    Status = CxPlatCryptInitialize();
     if (QUIC_FAILED(Status)) {
         QuicTraceEvent(
             LibraryErrorStatus,
             "[ lib] ERROR, %u, %s.",
             Status,
-            "CxPlatTlsLibraryInitialize");
+            "CxPlatCryptInitialize");
         goto Error;
     }
 
@@ -182,7 +188,7 @@ CxPlatUninitialize(
     )
 {
     PAGED_CODE();
-    CxPlatTlsLibraryUninitialize();
+    CxPlatCryptUninitialize();
     BCryptCloseAlgorithmProvider(CxPlatform.RngAlgorithm, 0);
     CxPlatform.RngAlgorithm = NULL;
     QuicTraceLogInfo(
@@ -228,6 +234,26 @@ CxPlatRandom(
             0);
 }
 
+#ifdef DEBUG
+
+void
+CxPlatSetAllocFailDenominator(
+    _In_ int32_t Value
+    )
+{
+    CxPlatform.AllocFailDenominator = Value;
+    CxPlatform.AllocCounter = 0;
+}
+
+int32_t
+CxPlatGetAllocFailDenominator(
+    )
+{
+    return CxPlatform.AllocFailDenominator;
+}
+
+#endif
+
 #ifdef QUIC_EVENTS_MANIFEST_ETW
 
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -250,11 +276,15 @@ QuicEtwCallback(
     UNREFERENCED_PARAMETER(MatchAllKeyword);
     UNREFERENCED_PARAMETER(FilterData);
 
+    if (!QuicTraceRundownCallback) {
+        return;
+    }
+
     switch(ControlCode) {
     case EVENT_CONTROL_CODE_ENABLE_PROVIDER:
     case EVENT_CONTROL_CODE_CAPTURE_STATE:
         if (CallbackContext == &MICROSOFT_MSQUIC_PROVIDER_Context) {
-            QuicTraceRundown();
+            QuicTraceRundownCallback();
         }
         break;
     case EVENT_CONTROL_CODE_DISABLE_PROVIDER:
