@@ -526,15 +526,17 @@ QuicListenerClaimConnection(
             Connection,
             QUIC_ERROR_CONNECTION_REFUSED);
         return FALSE;
+    } else if (Connection->State.HandleClosed) {
+        return FALSE; // App accepted but immediately closed the connection
+    } else {
+        //
+        // The application layer has accepted the connection and provided a server
+        // certificate.
+        //
+        CXPLAT_FRE_ASSERTMSG(
+            Connection->ClientCallbackHandler != NULL,
+            "App MUST set callback handler!");
     }
-
-    //
-    // The application layer has accepted the connection and provided a server
-    // certificate.
-    //
-    CXPLAT_FRE_ASSERTMSG(
-        Connection->ClientCallbackHandler != NULL,
-        "App MUST set callback handler!");
 
     Connection->State.ExternalOwner = TRUE;
     Connection->State.UpdateWorker = TRUE;

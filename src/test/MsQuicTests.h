@@ -39,6 +39,11 @@ void QuicTestDesiredVersionSettings();
 void QuicTestValidateParamApi();
 
 //
+// Rejection Tests
+//
+void QuicTestConnectionRejection(bool RejectByClosing);
+
+//
 // Event Validation Tests
 //
 
