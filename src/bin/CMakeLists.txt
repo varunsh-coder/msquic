@@ -240,6 +240,8 @@ elseif (CX_PLATFORM STREQUAL "darwin")
         PROPERTIES LINK_FLAGS "-exported_symbols_list \"${CMAKE_CURRENT_SOURCE_DIR}/darwin/exports.txt\"")
 endif()
 
+include(GNUInstallDirs)
+
 if(BUILD_SHARED_LIBS)
     target_include_directories(msquic PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
@@ -263,8 +265,6 @@ set_target_properties(
     msquic PROPERTIES
     PUBLIC_HEADER "${PUBLIC_HEADERS}"
 )
-
-include(GNUInstallDirs)
 
 install(TARGETS msquic
     EXPORT msquic
