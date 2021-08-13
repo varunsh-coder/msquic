@@ -219,7 +219,6 @@ else()
     target_link_libraries(msquic
         INTERFACE
         ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_STATIC_LIBRARY_PREFIX}${QUIC_LIBRARY_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}
-        inc
     )
     add_dependencies(msquic msquic_lib)
 endif()
