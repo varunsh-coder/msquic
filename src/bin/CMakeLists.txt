@@ -267,20 +267,15 @@ set_target_properties(
 include(GNUInstallDirs)
 
 install(TARGETS msquic
-    EXPORT MsQuicTargets
+    EXPORT msquic
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-export(EXPORT MsQuicTargets NAMESPACE MsQuic:: FILE msquic.cmake)
-
 set(CMAKE_INSTALL_CONFIGDIR ${CMAKE_INSTALL_LIBDIR}/cmake/msquic)
-install(EXPORT MsQuicTargets
-    DESTINATION ${CMAKE_INSTALL_CONFIGDIR}
-    NAMESPACE MsQuic::
-)
+install(EXPORT msquic DESTINATION ${CMAKE_INSTALL_CONFIGDIR})
 
 configure_file(msquic-config.cmake.in ${CMAKE_BINARY_DIR}/msquic-config.cmake)
 install(FILES ${CMAKE_BINARY_DIR}/msquic-config.cmake DESTINATION ${CMAKE_INSTALL_CONFIGDIR})
