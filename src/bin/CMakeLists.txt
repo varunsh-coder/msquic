@@ -243,14 +243,14 @@ endif()
 if(BUILD_SHARED_LIBS)
     target_include_directories(msquic PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
-        $<INSTALL_INTERFACE:${include_dest}>)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 else()
     target_include_directories(msquic_static INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
-        $<INSTALL_INTERFACE:${include_dest}>)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     target_include_directories(msquic INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../inc>
-        $<INSTALL_INTERFACE:${include_dest}>)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 endif()
 
 set(PUBLIC_HEADERS
@@ -259,16 +259,31 @@ set(PUBLIC_HEADERS
     ../inc/msquic_posix.h
     ../inc/quic_sal_stub.h)
 
-install(TARGETS msquic EXPORT msquic DESTINATION "${main_lib_dest}")
-install(FILES ${PUBLIC_HEADERS} DESTINATION "${include_dest}")
+set_target_properties(
+    msquic PROPERTIES
+    PUBLIC_HEADER "${PUBLIC_HEADERS}"
+)
+
+include(GNUInstallDirs)
+
+install(TARGETS msquic
+    EXPORT MsQuicTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+export(EXPORT MsQuicTargets NAMESPACE MsQuic:: FILE msquic.cmake)
+
+set(CMAKE_INSTALL_CONFIGDIR ${CMAKE_INSTALL_LIBDIR}/cmake/msquic)
+install(EXPORT MsQuicTargets
+    DESTINATION ${CMAKE_INSTALL_CONFIGDIR}
+    NAMESPACE MsQuic::
+)
 
 configure_file(msquic-config.cmake.in ${CMAKE_BINARY_DIR}/msquic-config.cmake)
-
-install(FILES ${CMAKE_BINARY_DIR}/msquic-config.cmake DESTINATION ${msquic_dest})
-
-if(BUILD_SHARED_LIBS)
-    install(EXPORT msquic DESTINATION ${msquic_dest})
-endif()
+install(FILES ${CMAKE_BINARY_DIR}/msquic-config.cmake DESTINATION ${CMAKE_INSTALL_CONFIGDIR})
 
 if (MSVC AND NOT QUIC_ENABLE_SANITIZERS AND BUILD_SHARED_LIBS)
     target_compile_options(msquic PRIVATE /analyze)
