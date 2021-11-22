@@ -572,10 +572,36 @@ CxPlatFramingChecksum(
         InitialChecksum += *((uint16_t*)(&Data[Length]));
     }
 
-    for (uint32_t i = 0; i < Length; i += 4) {
-        InitialChecksum += *((uint32_t*)(&Data[i]));
+    if (Length == 0) {
+        goto Folding;
     }
 
+
+    uint32_t* Data32 = (uint32_t*)Data;
+    uint32_t Count = (Length + 63) / 64;
+    switch (Count % 64) {
+    case 0:
+        do {
+            InitialChecksum += *(Data32++);
+    case 60:InitialChecksum += *(Data32++);
+    case 56:InitialChecksum += *(Data32++);
+    case 52:InitialChecksum += *(Data32++);
+    case 48:InitialChecksum += *(Data32++);
+    case 44:InitialChecksum += *(Data32++);
+    case 40:InitialChecksum += *(Data32++);
+    case 36:InitialChecksum += *(Data32++);
+    case 32:InitialChecksum += *(Data32++);
+    case 28:InitialChecksum += *(Data32++);
+    case 24:InitialChecksum += *(Data32++);
+    case 20:InitialChecksum += *(Data32++);
+    case 16:InitialChecksum += *(Data32++);
+    case 12:InitialChecksum += *(Data32++);
+    case 8: InitialChecksum += *(Data32++);
+    case 4: InitialChecksum += *(Data32++);
+        } while (--Count > 0);
+    }
+
+Folding:
     //
     // Fold all carries into the final checksum.
     //
