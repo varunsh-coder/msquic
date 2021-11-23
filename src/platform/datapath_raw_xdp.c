@@ -89,6 +89,7 @@ typedef struct DECLSPEC_ALIGN(MEMORY_ALLOCATION_ALIGNMENT) XDP_TX_PACKET {
     CXPLAT_SEND_DATA;
     XDP_QUEUE* Queue;
     CXPLAT_LIST_ENTRY Link;
+    uint16_t Paddings;
     uint8_t FrameBuffer[MAX_ETH_FRAME_SIZE];
 } XDP_TX_PACKET;
 

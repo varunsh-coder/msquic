@@ -576,13 +576,29 @@ CxPlatFramingChecksum(
         goto Folding;
     }
 
-
     uint32_t* Data32 = (uint32_t*)Data;
-    uint32_t Count = (Length + 63) / 64;
-    switch (Count % 64) {
+    int32_t Count = (Length + 127) / 128;
+    PreFetchCacheLine(PF_NON_TEMPORAL_LEVEL_ALL, Data32);
+    switch (Length % 128) {
     case 0:
         do {
             InitialChecksum += *(Data32++);
+    case 128:InitialChecksum += *(Data32++);
+    case 120:InitialChecksum += *(Data32++);
+    case 116:InitialChecksum += *(Data32++);
+    case 112:InitialChecksum += *(Data32++);
+    case 108:InitialChecksum += *(Data32++);
+    case 104:InitialChecksum += *(Data32++);
+    case 100:InitialChecksum += *(Data32++);
+    case 96:InitialChecksum += *(Data32++);
+    case 92:InitialChecksum += *(Data32++);
+    case 88:InitialChecksum += *(Data32++);
+    case 84:InitialChecksum += *(Data32++);
+    case 80:InitialChecksum += *(Data32++);
+    case 76:InitialChecksum += *(Data32++);
+    case 72:InitialChecksum += *(Data32++);
+    case 68:InitialChecksum += *(Data32++);
+    case 64:InitialChecksum += *(Data32++);
     case 60:InitialChecksum += *(Data32++);
     case 56:InitialChecksum += *(Data32++);
     case 52:InitialChecksum += *(Data32++);
