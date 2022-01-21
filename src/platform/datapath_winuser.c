@@ -75,7 +75,7 @@ CxPlatFuzzerRecvMsg(
 //
 // The maximum single buffer size for sending coalesced payloads.
 //
-#define CXPLAT_LARGE_SEND_BUFFER_SIZE         0xFFFF
+#define CXPLAT_LARGE_SEND_BUFFER_SIZE         0x1FFF
 
 //
 // The maximum number of UDP datagrams to preallocate for URO.
