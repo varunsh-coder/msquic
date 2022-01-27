@@ -55,11 +55,6 @@ Write-Host "    New version: $NewVerMajor.$NewVerMinor.$NewVerPatch"
     -replace "#define VER_MINOR (.*)", "#define VER_MINOR $NewVerMinor" `
     -replace "#define VER_PATCH (.*)", "#define VER_PATCH $NewVerPatch" |`
     Out-File $MsQuicVerFilePath
-(Get-Content $CreatePackageFilePath) `
-    -replace "majorVer: (.*)", "majorVer: $NewVerMajor" `
-    -replace "minorVer: (.*)", "minorVer: $NewVerMinor" `
-    -replace "patchVer: (.*)", "patchVer: $NewVerPatch" |`
-    Out-File $CreatePackageFilePath
 (Get-Content $CreateVPackFilePath) `
     -replace "majorVer: (.*)", "majorVer: $NewVerMajor" `
     -replace "minorVer: (.*)", "minorVer: $NewVerMinor" `
